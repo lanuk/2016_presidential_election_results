@@ -1,4 +1,4 @@
-from pandas import read_json, DataFrame
+from pandas import read_csv, read_json, DataFrame
 from pandas.io.json import json_normalize
 import time
 from datetime import date, timedelta
@@ -49,12 +49,42 @@ def mapping():
 
     return df
 
+def set_state_name(x):
+    if x[0] == 'county':
+        return ''
+    else:
+        return x[1]
+
+def set_name(x):
+    if x[0] == '':
+        return x[1]
+    else:
+        return x[0]
+
+def merge_results_mapping(results, mapping):
+    merged = results.merge(mapping, left_on='candidate', right_on='id')
+    merged_df = merged[['id_x','state','candidate_y','party','vote','vote_pct']]
+    merged_df.columns = ['id','state','candidate','party','votes','votes_pct']
+    merged_df['type'] = merged_df['id'].apply(lambda x: 'county' if x.isnumeric() else 'national' if x=='US' else 'state')
+    merged_df['state_national_name'] = merged_df[['type','state']].apply(set_state_name, axis=1)
+    return merged_df
+
+def county_name(input_df):
+    names = read_csv('fips.csv')
+    names['county_fips'] = names['county_fips'].apply(lambda x: '{0:0>5}'.format(x))
+    names['state_fips'] = names['state_fips'].apply(lambda x: '{0:0>2}'.format(x))
+    df = input_df.merge(names, how='left', left_on='id', right_on='county_fips')
+    df['name'] = df[['state_national_name','county']].apply(set_name, axis=1)
+    df['name'].fillna('', inplace=True)
+    out = df[['id','state_x','name','type','candidate','party','votes','votes_pct']]
+    out.columns = ['id','state','name','type','candidate','party','votes','votes_pct']
+    return out
+
 if __name__ == '__main__':
     results = results()
     mapping = mapping()
-    merged = results.merge(mapping, left_on='candidate', right_on='id')
-    out = merged[['id_x','state','candidate_y','party','vote','vote_pct']]
-    out.columns = ['id','state','candidate','party','votes','votes_pct']
-    out['type'] = out['id'].apply(lambda x: 'county' if x.isnumeric() else 'national' if x=='US' else 'state')
+
+    merged = merge_results_mapping(results, mapping)
+    out = county_name(merged)
 
     out.to_csv('presidential_election_results.csv', index=False)
